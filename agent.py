@@ -4,6 +4,7 @@ API, followed by a strict "extract just the answer value" step so we never
 trust the LLM to hand-format the final Telegram reply -- the code builds
 that JSON itself.
 """
+
 import os
 import json
 from groq import Groq
@@ -22,8 +23,8 @@ TOOLS_SPEC = [
         "function": {
             "name": "web_search",
             "description": "Search the web (DuckDuckGo) for pages relevant to a query. "
-                            "Use this to locate MOSPI/data.gov.in pages, dataset URLs, "
-                            "or general facts you need.",
+            "Use this to locate MOSPI/data.gov.in pages, dataset URLs, "
+            "or general facts you need.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -38,8 +39,8 @@ TOOLS_SPEC = [
         "function": {
             "name": "web_fetch",
             "description": "Fetch a URL and return its cleaned text content "
-                            "(for HTML pages), or a note telling you to load it "
-                            "via python_exec if it's a CSV/XLS/XLSX data file.",
+            "(for HTML pages), or a note telling you to load it "
+            "via python_exec if it's a CSV/XLS/XLSX data file.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -54,10 +55,10 @@ TOOLS_SPEC = [
         "function": {
             "name": "python_exec",
             "description": "Run Python code (pandas/numpy available, has network "
-                            "access) to compute an answer from data. ALWAYS print() "
-                            "the results you need -- only stdout is returned to you. "
-                            "Use this for any arithmetic, aggregation, sorting, or "
-                            "loading CSV/XLSX data directly from a URL.",
+            "access) to compute an answer from data. ALWAYS print() "
+            "the results you need -- only stdout is returned to you. "
+            "Use this for any arithmetic, aggregation, sorting, or "
+            "loading CSV/XLSX data directly from a URL.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -100,14 +101,33 @@ Rules:
 """
 
 FORMAT_SYSTEM_PROMPT = """\
-You convert a solved data-analysis answer into a single JSON *value* \
-matching the exact shape the original question requested (look at the \
-question text for the requested JSON shape, e.g. {"state": "..."} or a \
-plain number or a list). Output ONLY the JSON value that should go inside \
-the {"answer": <this>} wrapper -- not the wrapper itself, no markdown \
-fences, no explanation, nothing else. If the question doesn't specify an \
-explicit shape, use the simplest reasonable JSON representation of the \
-answer (a string, number, or small object).
+You convert a solved data-analysis answer into a single JSON *value* -- \
+specifically, whatever goes in place of the placeholder inside the \
+"answer" key of the reply template shown in the question. \
+Output ONLY that inner value. Never output the outer reply wrapper -- \
+never include an "answer" key or a "log_url" key in your output, those \
+belong to code outside you, not to your response.
+
+Example:
+Question contains this template: \
+{"answer": {"state": "<state name>"}, "log_url": "<url>"}
+Solved answer: "The state with the highest rate is Assam."
+Correct output: {"state": "Assam"}
+WRONG output: {"answer": {"state": "Assam"}, "log_url": ""}
+WRONG output: {"state": "Assam", "log_url": ""}
+
+Another example:
+Question contains this template: \
+{"answer": <number>, "log_url": "<url>"}
+Solved answer: "The total is 250."
+Correct output: 250
+WRONG output: {"answer": 250, "log_url": ""}
+
+Output ONLY the JSON value itself, no markdown fences, no explanation, \
+nothing else. If the question doesn't specify an explicit shape, use the \
+simplest reasonable JSON representation of the answer (a string, number, \
+or small object) -- still just the bare value, never wrapped in "answer"/\
+"log_url" keys.
 """
 
 
@@ -125,24 +145,34 @@ def _run_tool_loop(messages: list[dict], rlog) -> str:
         msg = resp.choices[0].message
         tool_calls = msg.tool_calls or []
 
-        rlog.log("assistant_step", step=step, content=msg.content, has_tool_calls=bool(tool_calls))
+        rlog.log(
+            "assistant_step",
+            step=step,
+            content=msg.content,
+            has_tool_calls=bool(tool_calls),
+        )
 
         if not tool_calls:
             return msg.content or ""
 
         # Append the assistant message (with tool_calls) then each tool result.
-        messages.append({
-            "role": "assistant",
-            "content": msg.content,
-            "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                }
-                for tc in tool_calls
-            ],
-        })
+        messages.append(
+            {
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in tool_calls
+                ],
+            }
+        )
 
         for tc in tool_calls:
             name = tc.function.name
@@ -158,11 +188,13 @@ def _run_tool_loop(messages: list[dict], rlog) -> str:
                 result = {"error": str(e)}
             rlog.log("tool_result", name=name, result=result)
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": json.dumps(result, default=str)[:8000],
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": json.dumps(result, default=str)[:8000],
+                }
+            )
 
     rlog.log("max_steps_reached")
     return "Could not reach a final answer within the tool-call budget."
@@ -197,11 +229,33 @@ def _format_final_answer(question: str, raw_answer: str, rlog):
     rlog.log("format_step_raw", text=text)
 
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
     except json.JSONDecodeError:
         # Fall back to returning the raw string -- still valid JSON as a string value.
         rlog.log("format_step_fallback_to_string")
         return text
+
+    parsed = _unwrap_if_echoed_template(parsed, rlog)
+    return parsed
+
+
+def _unwrap_if_echoed_template(value, rlog):
+    """Safety net: if the model echoed the whole reply wrapper (an object
+    containing an "answer" key, and either a "log_url" key or nothing
+    else useful), unwrap it to just the inner answer value. Recurses in
+    case of double-wrapping."""
+    seen_unwrap = False
+    while (
+        isinstance(value, dict)
+        and "answer" in value
+        and (set(value.keys()) <= {"answer", "log_url"})
+    ):
+        rlog.log("format_step_unwrapped_echoed_wrapper", was=value)
+        value = value["answer"]
+        seen_unwrap = True
+    if seen_unwrap:
+        rlog.log("format_step_unwrap_result", value=value)
+    return value
 
 
 def answer_question(history: list[dict], rlog) -> object:
