@@ -1,0 +1,21 @@
+[
+  {
+    "id": "sample-1",
+    "messages": [
+      "Which state has the highest maternal mortality rate based on MOSPI data? Reply with ONLY this JSON object and nothing else: {\"answer\": {\"state\": \"<state name>\"}, \"log_url\": \"<public wget-able URL to your agent's JSONL log>\"}"
+    ]
+  },
+  {
+    "id": "sample-2-multiturn",
+    "messages": [
+      "I'm going to ask about literacy rates by state.",
+      "Based on the most recent Census/MOSPI data, which state has the highest literacy rate? Reply with ONLY this JSON object and nothing else: {\"answer\": {\"state\": \"<state name>\", \"rate_percent\": <number>}, \"log_url\": \"<public wget-able URL>\"}"
+    ]
+  },
+  {
+    "id": "sample-3-inline-data",
+    "messages": [
+      "Given this data: [{\"month\": \"Jan\", \"sales\": 100}, {\"month\": \"Feb\", \"sales\": 150}, {\"month\": \"Mar\", \"sales\": 120}], what is the total sales? Reply with ONLY this JSON object and nothing else: {\"answer\": <total as a number>, \"log_url\": \"<public wget-able URL>\"}"
+    ]
+  }
+]
