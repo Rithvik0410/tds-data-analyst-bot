@@ -12,7 +12,7 @@ from groq import Groq
 from tools.web import web_search, web_fetch
 from tools.python_exec import python_exec
 
-MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 MAX_TOOL_STEPS = int(os.environ.get("MAX_TOOL_STEPS", "8"))
 
 client = Groq(api_key=os.environ["GROQ_API_KEY"])

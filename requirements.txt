@@ -5,3 +5,4 @@ pandas>=2.2.0
 numpy>=1.26.0
 beautifulsoup4>=4.12.3
 lxml>=5.2.0
+openai>=1.50.0
