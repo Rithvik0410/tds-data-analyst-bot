@@ -1,0 +1,6 @@
+{"ts": 1785376331.5767627, "event": "run_started", "chat_id": 1981180990}
+{"ts": 1785376331.5768156, "event": "incoming_message", "text": "Given this data: [{\"month\": \"Jan\", \"sales\": 100}, {\"month\": \"Feb\", \"sales\": 150}] what is the total sales? Reply with ONLY this JSON object and nothing else: {\"answer\": <number>, \"log_url\": \"<url>\"}", "history_len": 1}
+{"ts": 1785376332.7337806, "event": "assistant_step", "step": 0, "content": "{\"answer\": 250, \"log_url\": \"https://example.com\"}", "has_tool_calls": false}
+{"ts": 1785376332.7338133, "event": "raw_answer", "text": "{\"answer\": 250, \"log_url\": \"https://example.com\"}"}
+{"ts": 1785376333.514275, "event": "format_step_raw", "text": "250"}
+{"ts": 1785376333.5143187, "event": "final_value", "value": 250}
